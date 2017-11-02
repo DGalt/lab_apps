@@ -21,7 +21,8 @@ class ATypeAnalysis(QtWidgets.QWidget):
         pg.setConfigOption('background', 'w')
         pg.setConfigOption('foreground', 'k')
 
-        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed,
+                                       QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
 
@@ -113,11 +114,11 @@ class ATypeAnalysis(QtWidgets.QWidget):
         self.stop_layout.addWidget(self.stop_val)
 
         topSpacer = QtWidgets.QSpacerItem(20, 40,
-                                      QtGui.QSizePolicy.Minimum,
-                                      QtGui.QSizePolicy.Maximum)
+                                          QtGui.QSizePolicy.Minimum,
+                                          QtGui.QSizePolicy.Maximum)
         bottomSpacer = QtWidgets.QSpacerItem(20, 40,
-                                        QtGui.QSizePolicy.Minimum,
-                                        QtGui.QSizePolicy.Expanding)
+                                             QtGui.QSizePolicy.Minimum,
+                                             QtGui.QSizePolicy.Expanding)
 
         self.run_button = QtWidgets.QPushButton("Run new analysis")
         self.run_button.clicked.connect(self.run_new_analysis)
@@ -154,8 +155,8 @@ class ATypeAnalysis(QtWidgets.QWidget):
 
     def load_data(self):
         folder = QtWidgets.QFileDialog().getExistingDirectory(self,
-                                                          "Select data folder",
-                                                          self.parent_dir)
+                                                              "Select data folder",
+                                                              self.parent_dir)
 
         self.parent_dir = os.path.dirname(folder)
         self.df = rpv.import_folder(folder)['voltage recording']
@@ -163,59 +164,74 @@ class ATypeAnalysis(QtWidgets.QWidget):
         if self.df is None:
             self.gen_error_mbox('Folder does not contain voltage recording data')
 
-
     def initialize_parameters(self):
         self.bsl_sweep = self.bsl_sweep_val
         try:
-            self.ek = float(self.ek_val)
-            self.holding = float(self.holding_val)
-            self.start = float(self.start_val)
-            self.offset = float(self.offset_val)
-            self.first_step = float(self.first_step_val)
-            self.delta = float(self.delta_val)
-            self.num_steps = int(self.num_steps_val)
-            self.stop = float(self.stop_val)
-            self.steps = [self.holding + self.delta * i for i in range(num_steps)]
+            self.ek = float(self.ek_val.text())
+            self.holding = float(self.holding_val.text())
+            self.start = float(self.start_val.text())
+            self.offset = float(self.offset_val.text())
+            self.first_step = float(self.first_step_val.text())
+            self.delta = float(self.delta_val.text())
+            self.num_steps = int(self.num_steps_val.text())
+            self.stop = float(self.stop_val.text())
+            self.steps = [self.holding + self.delta * i for i in range(self.num_steps)]
             return True
         except TypeError:
-            message = "A parameter value is invalid. Check that all parameters besides baseline sweep are numeric only"
+            message = """A parameter value is invalid. Check that all parameters
+            besides baseline sweep are numeric only"""
             self.gen_error_mbox(message)
             return False
 
     def analyze_peaks(self):
         start = self.start + self.offset
         stop = start + 0.5
-        sub = self.df.loc[self.bsl_sweep]
+        sub = self.df.loc[self.bsl_sweep.text()]
         mask = (sub.time >= start) & (sub.time <= stop)
         bsl = sub.loc[mask, 'primary'].mean()
 
-        sweeps = df.index.levels[0]
+        sweeps = self.df.index.levels[0]
         self.i_vals = []
         self.g_vals = []
+        peaks = []
+        peak_times = []
+        plot = self.plot_widget.addPlot()
         for step, sweep in zip(self.steps, sweeps):
             sub = self.df.loc[sweep]
             mask = (sub.time >= start) & (sub.time <= stop)
-            peak = sub.loc[mask, 'primary'].max()
+            peak_ix = sub.loc[mask, 'primary'].idxmax()
+            peak = sub.loc[peak_ix, 'primary']
+            peak_time = sub.loc[peak_ix, 'time']
             vm = self.holding + step
-            g = peak / (vm - self.ek)
+            i = peak - bsl
+            g = i / (vm - self.ek)
 
-            self.i_vals.append(peak)
+            peak_times.append(peak_time)
+            peaks.append(peak)
+            self.i_vals.append(i)
             self.g_vals.append(g)
+            plot.plot(sub.time, sub.primary, pen='b')
 
-    def calc_tau(self):
+        plot.plot(peak_times, peaks, pen=None, symbol='o',
+                  symbolPen='r', symbolBrush='r')
+
+    def fit_transient(self):
         sweep = self.df.loc['Sweep0001'].copy()
         start = self.start + self.offset
         mask = (sweep.time >= start) & (sweep.time <= self.stop)
         peak_ix = sweep.loc[mask, 'primary'].idxmax()
-        peak_time = sweep.loc
+        peak_time = sweep.loc[mask, 'time'].idxmax()
+
+        # mask = (sweep.time >= )
 
     def run_analysis(self):
-        initialized = self.initialize_parameters
+        initialized = self.initialize_parameters()
         if initialized and self.df is not None:
-            self.analyze_peaks
+            self.analyze_peaks()
 
     def run_new_analysis(self):
-        pass
+        self.load_data()
+        self.run_analysis()
 
     def copy_output(self):
         pass
