@@ -28,6 +28,8 @@ class ATypeAnalysis(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout(self)
         self.parent_dir = None
         self.df = None
+        self.i_vals = []
+        self.g_vals = []
 
         left_col = QtWidgets.QVBoxLayout()
 
@@ -175,7 +177,8 @@ class ATypeAnalysis(QtWidgets.QWidget):
             self.delta = float(self.delta_val.text())
             self.num_steps = int(self.num_steps_val.text())
             self.stop = float(self.stop_val.text())
-            self.steps = [self.holding + self.delta * i for i in range(self.num_steps)]
+            self.steps = [self.holding + self.first_step +
+                          self.delta * i for i in range(self.num_steps)]
             return True
         except TypeError:
             message = """A parameter value is invalid. Check that all parameters
@@ -191,8 +194,6 @@ class ATypeAnalysis(QtWidgets.QWidget):
         bsl = sub.loc[mask, 'primary'].mean()
 
         sweeps = self.df.index.levels[0]
-        self.i_vals = []
-        self.g_vals = []
         peaks = []
         peak_times = []
         plot = self.plot_widget.addPlot(0, 0)
@@ -202,9 +203,8 @@ class ATypeAnalysis(QtWidgets.QWidget):
             peak_ix = sub.loc[mask, 'primary'].idxmax()
             peak = sub.loc[peak_ix, 'primary']
             peak_time = sub.loc[peak_ix, 'time']
-            vm = self.holding + step
             i = peak - bsl
-            g = i / (vm - self.ek)
+            g = i / (step - self.ek)
 
             peak_times.append(peak_time)
             peaks.append(peak)
@@ -248,19 +248,38 @@ class ATypeAnalysis(QtWidgets.QWidget):
         plot.plot(sweep.time, sweep.primary, pen='b')
         plot.plot(sub.time.values, fit, pen='r')
 
+    def write_table(self):
+        self.table.setRowCount(self.num_steps)
+        for i in range(self.num_steps):
+            vals = [self.steps[i], self.i_vals[i], self.g_vals[i]]
+            for j, val in enumerate(vals):
+                item = QtWidgets.QTableWidgetItem('%0.3f' % val)
+                self.table.setItem(i, j, item)
+
+        item = QtWidgets.QTableWidgetItem('%0.3f' % self.tau)
+        self.table.setItem(0, 3, item)
+
     def run_analysis(self):
-        self.plot_widget.clear()
         initialized = self.initialize_parameters()
         if initialized and self.df is not None:
+            self.plot_widget.clear()
+            # self.table.clear()
             self.analyze_peaks()
             self.fit_transient()
+            self.write_table()
 
     def run_new_analysis(self):
         self.load_data()
         self.run_analysis()
 
     def copy_output(self):
-        pass
+        if any(self.i_vals):
+            step_df = pd.DataFrame({'Steps': self.steps,
+                                    'I (pA)': self.i_vals,
+                                    'g': self.g_vals})
+            step_df['tau (ms)'] = self.tau
+            step_df.loc[1:, 'tau (ms)'] = np.nan
+            step_df[['Steps', 'I (pA)', 'g', 'tau (ms)']].to_clipboard(index=False)
 
     def gen_error_mbox(self, message):
         msg = QtWidgets.QMessageBox()
