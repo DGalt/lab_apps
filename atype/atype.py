@@ -6,8 +6,6 @@ import pyqtgraph as pg
 import numpy as np
 from scipy.optimize import curve_fit
 import pandas as pd
-import itertools
-from collections import OrderedDict
 
 
 class ATypeAnalysis(QtWidgets.QWidget):
