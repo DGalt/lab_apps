@@ -2,10 +2,9 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
 import os
 import neurphys.read_pv as rpv
-import neurphys.utilities as util
-import neurphys.pacemaking as pace
 import pyqtgraph as pg
 import numpy as np
+from scipy.optimize import curve_fit
 import pandas as pd
 import itertools
 from collections import OrderedDict
@@ -143,6 +142,7 @@ class ATypeAnalysis(QtWidgets.QWidget):
 
         self.plot_widget = pg.GraphicsLayoutWidget()
         self.table = QtWidgets.QTableWidget()
+        self.table.setFixedWidth(300)
         self.headers = ['Steps', 'I (pA)', 'g', 'tau (ms)']
         self.table.setColumnCount(len(self.headers))
         self.table.setHorizontalHeaderLabels(self.headers)
@@ -195,7 +195,7 @@ class ATypeAnalysis(QtWidgets.QWidget):
         self.g_vals = []
         peaks = []
         peak_times = []
-        plot = self.plot_widget.addPlot()
+        plot = self.plot_widget.addPlot(0, 0)
         for step, sweep in zip(self.steps, sweeps):
             sub = self.df.loc[sweep]
             mask = (sub.time >= start) & (sub.time <= stop)
@@ -220,14 +220,40 @@ class ATypeAnalysis(QtWidgets.QWidget):
         start = self.start + self.offset
         mask = (sweep.time >= start) & (sweep.time <= self.stop)
         peak_ix = sweep.loc[mask, 'primary'].idxmax()
-        peak_time = sweep.loc[mask, 'time'].idxmax()
+        peak_time = sweep.loc[peak_ix, 'time']
 
-        # mask = (sweep.time >= )
+        mask = (sweep.time >= peak_time) & (sweep.time <= self.stop)
+        sub = sweep.loc[mask]
+
+        x_zeroed = sub.time.values - sub.time.iloc[0]
+        # guess = np.array([1, 1, 1, 1, 0])
+        guess = np.array([1, 1, 0])
+
+        # def exp_decay(x, a, b, c, d, e):
+            # return a*np.exp(-x/b) + c*np.exp(-x/d) + e
+        def exp_decay(x, a, b, c):
+            return a*np.exp(-x/b) + c
+
+        popt, pcov = curve_fit(exp_decay, x_zeroed*1e3, sub.primary, guess)
+
+        # amp1 = popt[0]
+        # tau1 = popt[1]
+        # amp2 = popt[2]
+        # tau2 = popt[3]
+
+        # tau = ((tau1*amp1)+(tau2*amp2))/(amp1+amp2)
+        self.tau = popt[1]
+        fit = exp_decay(x_zeroed*1e3, *popt)
+        plot = self.plot_widget.addPlot(1, 0)
+        plot.plot(sweep.time, sweep.primary, pen='b')
+        plot.plot(sub.time.values, fit, pen='r')
 
     def run_analysis(self):
+        self.plot_widget.clear()
         initialized = self.initialize_parameters()
         if initialized and self.df is not None:
             self.analyze_peaks()
+            self.fit_transient()
 
     def run_new_analysis(self):
         self.load_data()
